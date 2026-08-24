@@ -14,6 +14,7 @@
     "postbuild": "npm run size-limit",
     "size-limit": "size-limit",
     "serve": "brick-container-serve",
+    "serve:forms": "brick-container-serve --subdir --server=https://dev-153.easyops.local --local-bricks=forms",
     "test": "next-jest",
     "test:ci": "lerna run test:ci --",
     "test:gc": "lerna run test --",

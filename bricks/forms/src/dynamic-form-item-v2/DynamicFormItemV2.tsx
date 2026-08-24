@@ -58,7 +58,11 @@ interface LegacyDynamicFormItemV2Ref {
   validateFields: FormInstance["validateFields"];
   columns: Column[];
   setColumns: React.Dispatch<React.SetStateAction<Column[]>>;
-  clearRowFieldValue: (rowIndex: number, fieldName: string) => void;
+  updateRowFieldValue: (
+    rowIndex: number,
+    fieldName: string,
+    value: any
+  ) => void;
 }
 
 type DynamicFormValue = {
@@ -92,6 +96,8 @@ export const LegacyDynamicFormItemV2 = forwardRef(
     const { t } = useTranslation(NS_FORMS);
     const [form] = Form.useForm();
     const [columns, setColumns] = React.useState<Column[]>([]);
+    const isProcessingChanges = React.useRef(false);
+    const prevRowCount = React.useRef(0);
     useEffect(() => {
       setColumns(props.columns || []);
     }, [props.columns]);
@@ -100,14 +106,18 @@ export const LegacyDynamicFormItemV2 = forwardRef(
       validateFields: form.validateFields,
       columns: columns,
       setColumns: setColumns,
-      clearRowFieldValue: (rowIndex: number, fieldName: string) => {
-        const listData = form.getFieldValue(FORM_LIST_NAME) || [];
-        let newListData = [...listData];
-        if (newListData[rowIndex]) {
-          newListData[rowIndex] = { ...newListData[rowIndex], [fieldName]: undefined };
+      updateRowFieldValue: (
+        rowIndex: number,
+        fieldName: string,
+        value: any
+      ) => {
+        const currentData = props.value || [];
+        const newData = [...currentData];
+        if (newData[rowIndex]) {
+          newData[rowIndex] = { ...newData[rowIndex], [fieldName]: value };
         }
-        form.setFieldsValue({ [FORM_LIST_NAME]: newListData });
-        onChange?.([...newListData]);
+        form.setFieldsValue({ [FORM_LIST_NAME]: newData });
+        onChange?.([...newData]);
       },
     }));
 
@@ -119,7 +129,62 @@ export const LegacyDynamicFormItemV2 = forwardRef(
       changedValues: DynamicFormValue,
       allValues: DynamicFormValue
     ): void => {
-      onChange?.(allValues?.[FORM_LIST_NAME]);
+      // 防止 setFieldsValue 再次触发 onValuesChange 导致无限循环
+      if (isProcessingChanges.current) return;
+
+      const changedRows = changedValues?.[FORM_LIST_NAME] as unknown as
+        | Record<string, Record<string, any>>
+        | undefined;
+      const allRows = allValues?.[FORM_LIST_NAME];
+
+      // 行数变化（添加/删除行）时，跳过列级 onValuesChange 回调
+      const currentRowCount = allRows?.length ?? 0;
+      const isRowStructChange = currentRowCount !== prevRowCount.current;
+      prevRowCount.current = currentRowCount;
+
+      if (changedRows && allRows && !isRowStructChange) {
+        const updatedRows = [...allRows];
+        let hasUpdates = false;
+
+        Object.keys(changedRows).forEach((rowIndexStr) => {
+          const rowIndex = Number(rowIndexStr);
+          const changedFields = changedRows[rowIndexStr];
+          if (!changedFields) return;
+
+          Object.keys(changedFields).forEach((fieldName) => {
+            const column = columns.find((col) => col.name === fieldName);
+            if (column?.onValuesChange) {
+              try {
+                const updates = column.onValuesChange(
+                  updatedRows[rowIndex],
+                  rowIndex,
+                  fieldName
+                );
+                if (updates && Object.keys(updates).length > 0) {
+                  updatedRows[rowIndex] = {
+                    ...updatedRows[rowIndex],
+                    ...updates,
+                  };
+                  hasUpdates = true;
+                }
+              } catch (e) {
+                // eslint-disable-next-line no-console
+                console.error(`column "${fieldName}" onValuesChange error:`, e);
+              }
+            }
+          });
+        });
+
+        if (hasUpdates) {
+          isProcessingChanges.current = true;
+          form.setFieldsValue({ [FORM_LIST_NAME]: updatedRows });
+          isProcessingChanges.current = false;
+          onChange?.(updatedRows);
+          return;
+        }
+      }
+
+      onChange?.(allRows);
     };
 
     const handleInputBlur = (
@@ -360,7 +425,11 @@ export const LegacyDynamicFormItemV2 = forwardRef(
 export interface upperDynamicFormItemV2Ref {
   columns: Column[];
   setColumns: React.Dispatch<React.SetStateAction<Column[]>>;
-  clearRowFieldValue: (rowIndex: number, fieldName: string) => void;
+  updateRowFieldValue: (
+    rowIndex: number,
+    fieldName: string,
+    value: any
+  ) => void;
 }
 
 interface DynamicFormItemV2Props extends LegacyDynamicFormItemV2Props {
@@ -398,8 +467,12 @@ export function DynamicFormItemV2(
     setColumns: (updater: React.SetStateAction<Column[]>) => {
       DynamicFormItemV2Ref.current?.setColumns?.(updater);
     },
-    clearRowFieldValue: (rowIndex: number, fieldName: string) => {
-      DynamicFormItemV2Ref.current?.clearRowFieldValue?.(rowIndex, fieldName);
+    updateRowFieldValue: (rowIndex: number, fieldName: string, value: any) => {
+      DynamicFormItemV2Ref.current?.updateRowFieldValue?.(
+        rowIndex,
+        fieldName,
+        value
+      );
     },
   }));
 

@@ -315,6 +315,16 @@ export interface BasicColumn {
    * 表单项提示信息
    */
   tooltip?: string;
+  /**
+   * 当该表单项的值变化时触发，返回需要联动更新的其他字段及其值。
+   * 返回一个对象，key 为同行其他字段的 name，value 为要设置的值（传 null 清空）。
+   * 返回 undefined/null/空对象表示不做联动。
+   */
+  onValuesChange?: (
+    rowValue: Record<string, any>,
+    rowIndex: number,
+    fieldName: string
+  ) => Record<string, any> | void;
 }
 
 export type Column = BasicColumn &
